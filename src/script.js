@@ -355,13 +355,63 @@ const planeMaterial = new THREE.ShaderMaterial({
     uTime: { value: 0 },
     uMouse: { value: new THREE.Vector2() },
     uTexture: { value: texturesArray[0] },
-    resolution: { value: new THREE.Vector4() },
+    // resolution: { value: new THREE.Vector4() },
+    uResolution: { value: new THREE.Vector2() },
+    uDisplace: { value: 2 },
+    uSpread: { value: 10 },
+    uNoise: { value: 5 },
   },
   vertexShader: `
   uniform vec2 uFrequency;
   uniform float uTime;
   uniform vec2 uMouse; 
+  uniform float uDisplace;
+  uniform float uSpread;
+  uniform float uNoise;
+  uniform vec2 uResolution;
+  
+
+
+  varying vec3 vNormal;
+  varying vec3 vPosition;
   varying vec2 vUv;
+
+
+
+
+  #define PI 3.14159265358979
+  #define MOD3 vec3(.1031,.11369,.13787)
+  
+  vec3 hash33(vec3 p3) {
+    p3 = fract(p3 * MOD3);
+      p3 += dot(p3, p3.yxz+19.19);
+      return -1.0 + 2.0 * fract(vec3((p3.x + p3.y)*p3.z, (p3.x+p3.z)*p3.y, (p3.y+p3.z)*p3.x));
+  }
+  
+  float pnoise(vec3 p) {
+      vec3 pi = floor(p);
+      vec3 pf = p - pi;
+      vec3 w = pf * pf * (3. - 2.0 * pf);
+      return 	mix(
+              mix(
+                    mix(dot(pf - vec3(0, 0, 0), hash33(pi + vec3(0, 0, 0))),
+                          dot(pf - vec3(1, 0, 0), hash33(pi + vec3(1, 0, 0))),
+                           w.x),
+                    mix(dot(pf - vec3(0, 0, 1), hash33(pi + vec3(0, 0, 1))),
+                          dot(pf - vec3(1, 0, 1), hash33(pi + vec3(1, 0, 1))),
+                           w.x),
+                    w.z),
+              mix(
+                      mix(dot(pf - vec3(0, 1, 0), hash33(pi + vec3(0, 1, 0))),
+                          dot(pf - vec3(1, 1, 0), hash33(pi + vec3(1, 1, 0))),
+                           w.x),
+                       mix(dot(pf - vec3(0, 1, 1), hash33(pi + vec3(0, 1, 1))),
+                          dot(pf - vec3(1, 1, 1), hash33(pi + vec3(1, 1, 1))),
+                           w.x),
+                    w.z),
+            w.y);
+  }
+ 
 
   void main()
   {
@@ -379,7 +429,16 @@ const planeMaterial = new THREE.ShaderMaterial({
       // Adjust the Z coordinate based on the mouse distance
       // pos.z = sin(dist * 1.0 + uTime);
 
-      vec4 modelPosition = modelMatrix * vec4(pos, 1.0);
+      float pat = pnoise(vec3(vUv * uNoise , uTime * 1.5 )) * uDisplace ;
+      float proximity = abs(vUv.x - (.5 + sin(uTime)/(10. * uSpread ) ));
+      vec3 full = pat * vec3(clamp(.05 * uSpread  - proximity , 0.01, 0.01));
+      // vec3 newPosition = vPosition + vNormal * full;
+      vec3 p = pos + full;
+
+
+
+
+      vec4 modelPosition = modelMatrix * vec4(p, 1.0);
       modelPosition.z += sin(modelPosition.x * uFrequency.x - uTime) * 0.05;
       modelPosition.z += sin(modelPosition.y * uFrequency.y - uTime) * 0.05;
   
@@ -395,15 +454,64 @@ const planeMaterial = new THREE.ShaderMaterial({
   fragmentShader: `
   uniform sampler2D uTexture;
   uniform float uTime;
-  uniform vec2 uMouse; // Mouse position
+  uniform vec2 uMouse;
+  uniform vec2 uResolution;
+  uniform float uDisplace;
+  uniform float uSpread;
+  uniform float uNoise;
+
   varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vPattern;
+  varying vec3 vPosition;
+
+
+  #define PI 3.14159265358979
+#define MOD3 vec3(.1031,.11369,.13787)
+
+vec3 hash33(vec3 p3) {
+	p3 = fract(p3 * MOD3);
+    p3 += dot(p3, p3.yxz+19.19);
+    return -1.0 + 2.0 * fract(vec3((p3.x + p3.y)*p3.z, (p3.x+p3.z)*p3.y, (p3.y+p3.z)*p3.x));
+}
+
+float pnoise(vec3 p) {
+    vec3 pi = floor(p);
+    vec3 pf = p - pi;
+    vec3 w = pf * pf * (3. - 2.0 * pf);
+    return 	mix(
+        		mix(
+                	mix(dot(pf - vec3(0, 0, 0), hash33(pi + vec3(0, 0, 0))),
+                        dot(pf - vec3(1, 0, 0), hash33(pi + vec3(1, 0, 0))),
+                       	w.x),
+                	mix(dot(pf - vec3(0, 0, 1), hash33(pi + vec3(0, 0, 1))),
+                        dot(pf - vec3(1, 0, 1), hash33(pi + vec3(1, 0, 1))),
+                       	w.x),
+                	w.z),
+        		mix(
+                    mix(dot(pf - vec3(0, 1, 0), hash33(pi + vec3(0, 1, 0))),
+                        dot(pf - vec3(1, 1, 0), hash33(pi + vec3(1, 1, 0))),
+                       	w.x),
+                   	mix(dot(pf - vec3(0, 1, 1), hash33(pi + vec3(0, 1, 1))),
+                        dot(pf - vec3(1, 1, 1), hash33(pi + vec3(1, 1, 1))),
+                       	w.x),
+                	w.z),
+    			w.y);
+}
   
   void main()
   {
       vec2 p = vUv;
 
-      float distortAmount = length(p + uMouse) * 0.1;
-      p -= sin(distortAmount) * 0.15;
+      // float distortAmount = length(p + uMouse) * 0.1;
+      // p -= sin(distortAmount) * 0.15;
+
+      float pat = pnoise(vec3(p * uNoise , uMouse * 3.0 )) * uDisplace ;
+      // float proximity = abs(vUv.x - (.5 + sin(uTime)/(12. * uSpread ) ));
+      // vec3 full = pat * vec3(clamp(.23 * uSpread  - proximity , 0., 1.));
+      // vec3 newPosition = vPosition + vNormal * full;
+      p += sin(pat) * 0.05;
+
       vec4 textureColor = texture2D(uTexture, p);
       gl_FragColor = textureColor;
   }
@@ -440,10 +548,18 @@ groupPlane.add(planeMesh);
 
 function handleScreenSizeChanges() {
   if (smallScreenQuery.matches) {
-    group.scale.set(0.35, 0.35, 0.35); // Scale down for small screens
-    groupCopy.scale.set(0.35, 0.35, 0.35); // Scale down for small screens
-    planeMesh.scale.set(0.5, 0.5, 0.5); // Scale down for small screens
+    scroller.on((event) => {
+      position = event.y / 800;
+      speed = event.deltaY / 500;
+    });
+    group.scale.set(0.4, 0.4, 0.4); // Scale down for small screens
+    groupCopy.scale.set(0.4, 0.4, 0.4); // Scale down for small screens
+    planeMesh.scale.set(0.85, 0.85, 0.85); // Scale down for small screens
   } else if (mediumScreenQuery.matches) {
+    scroller.on((event) => {
+      position = event.y / 1200;
+      speed = event.deltaY / 800;
+    });
     group.scale.set(0.5, 0.5, 0.5); // Default scale for medium screens
     groupCopy.scale.set(0.5, 0.5, 0.5); // Default scale for medium screens
     planeMesh.scale.set(0.8, 0.8, 0.8); // Scale down for small screens
